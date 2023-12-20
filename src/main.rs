@@ -43,6 +43,9 @@ struct Args {
 
     #[arg(short, long)]
     include_derived_quantities: bool,
+
+    #[arg(long)]
+    limit: Option<usize>,
 }
 
 #[derive(Default)]
@@ -162,14 +165,14 @@ fn write_varint<T: BufMut>(data: &mut T, mut value: u32) {
     data.put_u8(value as u8);
 }
 
-fn read_weights<P: AsRef<Path>>(path: P) -> Result<(usize, String, Vec<i32>)> {
+fn read_weights<P: AsRef<Path>>(path: P, limit: usize) -> Result<(usize, String, Vec<i32>)> {
     let data = fs::read(path)?;
     let mut buf = Cursor::new(data);
 
     let dimension = buf.get_u32() as usize;
     let numerator = buf.get_u32();
     let denominator = buf.get_u32();
-    let ws_count = buf.get_u64() as usize;
+    let ws_count = min(buf.get_u64() as usize, limit);
 
     let index = if denominator == 1 {
         format!("{}", numerator)
@@ -728,6 +731,7 @@ fn read_parquet<P: AsRef<Path>>(
     non_ip: &mut NonIpPolytopeInfo,
     non_reflexive: &mut NonReflexivePolytopeInfo,
     reflexive: &mut ReflexivePolytopeInfo,
+    limit: usize,
 ) -> Result<(usize, i32, i32)> {
     use parquet::column::reader::ColumnReader;
     use parquet::file::reader::FileReader as _;
@@ -756,7 +760,9 @@ fn read_parquet<P: AsRef<Path>>(
     non_reflexive.resize(dimension);
     reflexive.resize(dimension, false);
 
-    let mut values = vec![vec![0; metadata.file_metadata().num_rows() as usize]; num_columns];
+    let row_count = min(metadata.file_metadata().num_rows() as usize, limit);
+
+    let mut values = vec![vec![0; row_count]; num_columns];
     let mut pos = 0;
 
     for g in 0..metadata.num_row_groups() {
@@ -767,24 +773,29 @@ fn read_parquet<P: AsRef<Path>>(
             bail!("columns missing");
         }
 
+        let to_read = min(row_group_metadata.num_rows() as usize, row_count - pos);
+
         for c in 0..num_columns {
             let mut column_reader = row_group_reader.get_column_reader(c)?;
 
             match column_reader {
                 ColumnReader::Int32ColumnReader(ref mut typed_reader) => {
                     let (count, _, _) =
-                        typed_reader.read_records(usize::MAX, None, None, &mut values[c][pos..])?;
+                        typed_reader.read_records(to_read, None, None, &mut values[c][pos..])?;
 
-                    assert_eq!(count, row_group_metadata.num_rows() as usize);
+                    assert_eq!(count, to_read);
                 }
                 _ => bail!("invalid Parquet column type"),
             }
         }
 
-        pos += row_group_metadata.num_rows() as usize;
+        pos += to_read;
+        if pos >= row_count {
+            break;
+        }
     }
 
-    assert_eq!(pos, metadata.file_metadata().num_rows() as usize);
+    assert_eq!(pos, row_count);
 
     if !is_ip {
         non_ip.weight_lists = values;
@@ -809,9 +820,11 @@ fn read_parquet<P: AsRef<Path>>(
 fn main() -> Result<()> {
     let args = Args::parse();
 
+    let limit = args.limit.unwrap_or(usize::MAX);
+
     if let (Some(ws_in), Some(polytope_info_in)) = (args.ws_in, args.polytope_info_in) {
         println!("Reading weights...");
-        let (dimension, index, weights) = read_weights(ws_in)?;
+        let (dimension, index, weights) = read_weights(ws_in, limit)?;
 
         println!("Reading polytope info...");
         let (non_ip, non_reflexive, reflexive) = read_polytope_info(
@@ -846,7 +859,7 @@ fn main() -> Result<()> {
 
         for path in args.parquet_in {
             (dimension, numerator, denominator) =
-                read_parquet(path, &mut non_ip, &mut non_reflexive, &mut reflexive)?;
+                read_parquet(path, &mut non_ip, &mut non_reflexive, &mut reflexive, limit)?;
         }
 
         println!("Writing weights and polytope info...");
