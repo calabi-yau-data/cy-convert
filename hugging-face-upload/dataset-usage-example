@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+
+from datasets import load_dataset
+
+dataset = load_dataset("cy-data/ws-5d", name="reflexive", split="full", streaming=True)
+
+for row in dataset.take(5):
+    print(row)
