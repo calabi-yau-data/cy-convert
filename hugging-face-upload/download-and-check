@@ -47,10 +47,11 @@ def download(repo_id, filename):
     if token is not None:
         headers["authorization"] = "Bearer " + token
 
-    r = requests.get(url, headers=headers)
-    r.raise_for_status()
-
-    return r.content
+    while True:
+        r = requests.get(url, headers=headers)
+        if r.status_code == 200:
+            return r.content
+        print("error downloading file. trying again..", file=sys.stderr)
 
 
 def download_and_check(number: str, temp_dir: str):
