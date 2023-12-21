@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+
+from huggingface_hub import HfApi
+from subprocess import check_call
+import os
+import sys
+import tempfile
+import threading
+
+
+def convert_to_parquet(
+    ws_path: str,
+    polytope_info_path: str,
+    parquet_non_ip_path: str,
+    parquet_non_reflexive_path: str,
+    parquet_reflexive_path: str,
+):
+    cmd = [
+        "./cy-convert",
+        "--ws-in",
+        ws_path,
+        "--polytope-info-in",
+        polytope_info_path,
+        "--parquet-non-ip-out",
+        parquet_non_ip_path,
+        "--parquet-non-reflexive-out",
+        parquet_non_reflexive_path,
+        "--parquet-reflexive-out",
+        parquet_reflexive_path,
+        # "--limit",
+        # "100",
+    ]
+
+    check_call(cmd)
+
+
+def convert_and_upload(
+    ws_path: str, polytope_info_path: str, number: str, temp_dir: str
+):
+    non_ip_path = os.path.join(temp_dir, "non-ip.parquet")
+    non_reflexive_path = os.path.join(temp_dir, "non-reflexive.parquet")
+    reflexive_path = os.path.join(temp_dir, "reflexive.parquet")
+
+    os.mkfifo(non_ip_path)
+    os.mkfifo(non_reflexive_path)
+    os.mkfifo(reflexive_path)
+
+    non_ip_data = None
+    non_reflexive_data = None
+    reflexive_data = None
+
+    def read_non_ip():
+        nonlocal non_ip_data
+        non_ip_data = open(non_ip_path, "rb").read()
+
+    def read_non_reflexive():
+        nonlocal non_reflexive_data
+        non_reflexive_data = open(non_reflexive_path, "rb").read()
+
+    def read_reflexive():
+        nonlocal reflexive_data
+        reflexive_data = open(reflexive_path, "rb").read()
+
+    t0 = threading.Thread(target=read_non_ip)
+    t1 = threading.Thread(target=read_non_reflexive)
+    t2 = threading.Thread(target=read_reflexive)
+    t0.start()
+    t1.start()
+    t2.start()
+
+    convert_to_parquet(
+        ws_path, polytope_info_path, non_ip_path, non_reflexive_path, reflexive_path
+    )
+
+    t0.join()
+    t1.join()
+    t2.join()
+
+    hf_api = HfApi()
+
+    hf_api.upload_file(
+        path_or_fileobj=non_ip_data,
+        path_in_repo=f"non-ip/ws-5d-non-ip-{number}.parquet",
+        repo_id="cy-data/ws-5d",
+        repo_type="dataset",
+    )
+
+    hf_api.upload_file(
+        path_or_fileobj=non_reflexive_data,
+        path_in_repo=f"non-reflexive/ws-5d-non-reflexive-{number}.parquet",
+        repo_id="cy-data/ws-5d",
+        repo_type="dataset",
+    )
+
+    hf_api.upload_file(
+        path_or_fileobj=reflexive_data,
+        path_in_repo=f"reflexive/ws-5d-reflexive-{number}.parquet",
+        repo_id="cy-data/ws-5d",
+        repo_type="dataset",
+    )
+
+    os.unlink(non_ip_path)
+    os.unlink(non_reflexive_path)
+    os.unlink(reflexive_path)
+
+
+def main():
+    dir = sys.argv[1]
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        for i in range(4000):
+            number = f"{i:04}"
+            path = os.path.join(dir, "ws" + number)
+            convert_and_upload(path, path + ".info", number, temp_dir)
+
+
+main()

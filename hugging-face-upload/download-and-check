@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+
+from subprocess import check_call
+import hashlib
+import huggingface_hub
+import os
+import requests
+import sys
+import tempfile
+import threading
+import time
+
+
+def convert_from_parquet(
+    ws_path: str,
+    polytope_info_path: str,
+    parquet_non_ip_path: str,
+    parquet_non_reflexive_path: str,
+    parquet_reflexive_path: str,
+):
+    cmd = [
+        "./cy-convert",
+        "--ws-out",
+        ws_path,
+        "--polytope-info-out",
+        polytope_info_path,
+        "--parquet-in",
+        parquet_non_ip_path,
+        "--parquet-in",
+        parquet_non_reflexive_path,
+        "--parquet-in",
+        parquet_reflexive_path,
+    ]
+
+    check_call(cmd)
+
+
+def download(repo_id, filename):
+    url = huggingface_hub.hf_hub_url(
+        filename=filename,
+        repo_id=repo_id,
+        repo_type="dataset",
+    )
+
+    headers = {}
+    token = huggingface_hub.get_token()
+    if token is not None:
+        headers["authorization"] = "Bearer " + token
+
+    r = requests.get(url, headers=headers)
+    r.raise_for_status()
+
+    return r.content
+
+
+def download_and_check(number: str, temp_dir: str):
+    non_ip_path = os.path.join(temp_dir, "non-ip.parquet")
+    non_reflexive_path = os.path.join(temp_dir, "non-reflexive.parquet")
+    reflexive_path = os.path.join(temp_dir, "reflexive.parquet")
+    ws_path = os.path.join(temp_dir, "ws")
+    polytope_info_path = os.path.join(temp_dir, "polytope-info")
+
+    os.mkfifo(ws_path)
+    os.mkfifo(polytope_info_path)
+
+    # The plan was to download to a fifo in order to not burden the storage drive. But
+    # unfortunately the Rust Parquet library does not support reading from fifos.
+
+    non_ip_data = download("cy-data/ws-5d", f"non-ip/ws-5d-non-ip-{number}.parquet")
+    non_reflexive_data = download(
+        "cy-data/ws-5d", f"non-reflexive/ws-5d-non-reflexive-{number}.parquet"
+    )
+    reflexive_data = download(
+        "cy-data/ws-5d", f"reflexive/ws-5d-reflexive-{number}.parquet"
+    )
+
+    with open(non_ip_path, "wb") as f:
+        f.write(non_ip_data)
+        f.flush()
+
+    with open(non_reflexive_path, "wb") as f:
+        f.write(non_reflexive_data)
+        f.flush()
+
+    with open(reflexive_path, "wb") as f:
+        f.write(reflexive_data)
+        f.flush()
+
+    ws_data = None
+    polytope_info_data = None
+
+    def read_ws():
+        nonlocal ws_data
+        ws_data = open(ws_path, "rb").read()
+
+    def read_polytope_info():
+        nonlocal polytope_info_data
+        polytope_info_data = open(polytope_info_path, "rb").read()
+
+    t0 = threading.Thread(target=read_ws)
+    t1 = threading.Thread(target=read_polytope_info)
+    t0.start()
+    t1.start()
+
+    convert_from_parquet(
+        ws_path,
+        polytope_info_path,
+        non_ip_path,
+        non_reflexive_path,
+        reflexive_path,
+    )
+
+    t0.join()
+    t1.join()
+
+    ws_hash = hashlib.sha256(ws_data)
+    polytope_info_hash = hashlib.sha256(polytope_info_data)
+
+    print(f"{polytope_info_hash.hexdigest()}  ws{number}.info")
+    print(f"{ws_hash.hexdigest()}  ws{number}")
+    sys.stdout.flush()
+
+    os.unlink(non_ip_path)
+    os.unlink(non_reflexive_path)
+    os.unlink(reflexive_path)
+    os.unlink(ws_path)
+    os.unlink(polytope_info_path)
+
+
+def main():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        for i in range(4000):
+            number = f"{i:04}"
+            download_and_check(number, temp_dir)
+
+
+main()

@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "hugging-face-upload"
+version = "0.1.0"
+description = ""
+authors = ["Friedrich Schöller <code@schoeller.se>"]
+readme = "README.md"
+packages = [{include = "convert-and-upload"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+huggingface-hub = {extras = ["cli"], version = "^0.20.1"}
+requests = "^2.31.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
