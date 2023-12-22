@@ -52,6 +52,7 @@ def download(repo_id, filename):
         if r.status_code == 200:
             return r.content
         print("error downloading file. trying again..", file=sys.stderr)
+        time.sleep(5)
 
 
 def download_and_check(number: str, temp_dir: str):
