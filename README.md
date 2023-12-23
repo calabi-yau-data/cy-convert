@@ -17,6 +17,7 @@ Options:
       --parquet-non-reflexive-out <FILE>
       --parquet-reflexive-out <FILE>
   -i, --include-derived-quantities
+      --limit <LIMIT>
   -h, --help                              Print help
   -V, --version                           Print version
 ```
