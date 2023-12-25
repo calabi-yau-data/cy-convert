@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 
 
 def convert_to_parquet(
@@ -32,6 +33,24 @@ def convert_to_parquet(
     ]
 
     check_call(cmd)
+
+
+def upload_file(src_path, dest_path, repo_id):
+    print(f"uploading to {dest_path}..")
+    while True:
+        try:
+            hf_api = HfApi()
+            hf_api.upload_file(
+                path_or_fileobj=src_path,
+                path_in_repo=dest_path,
+                repo_id=repo_id,
+                repo_type="dataset",
+            )
+            break
+        except RuntimeError:
+            print("upload error. retrying..")
+            time.sleep(10)
+            pass
 
 
 def convert_and_upload(
@@ -76,27 +95,22 @@ def convert_and_upload(
     t1.join()
     t2.join()
 
-    hf_api = HfApi()
-
-    hf_api.upload_file(
-        path_or_fileobj=non_ip_data,
-        path_in_repo=f"non-ip/ws-5d-non-ip-{number}.parquet",
-        repo_id="cy-data/ws-5d",
-        repo_type="dataset",
+    upload_file(
+        non_ip_data,
+        f"non-ip/ws-5d-non-ip-{number}.parquet",
+        "cy-data/ws-5d",
     )
 
-    hf_api.upload_file(
-        path_or_fileobj=non_reflexive_data,
-        path_in_repo=f"non-reflexive/ws-5d-non-reflexive-{number}.parquet",
-        repo_id="cy-data/ws-5d",
-        repo_type="dataset",
+    upload_file(
+        non_reflexive_data,
+        f"non-reflexive/ws-5d-non-reflexive-{number}.parquet",
+        "cy-data/ws-5d",
     )
 
-    hf_api.upload_file(
-        path_or_fileobj=reflexive_data,
-        path_in_repo=f"reflexive/ws-5d-reflexive-{number}.parquet",
-        repo_id="cy-data/ws-5d",
-        repo_type="dataset",
+    upload_file(
+        reflexive_data,
+        f"reflexive/ws-5d-reflexive-{number}.parquet",
+        "cy-data/ws-5d",
     )
 
     os.unlink(non_ip_path)
