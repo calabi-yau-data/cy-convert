@@ -35,11 +35,12 @@ def convert_from_parquet(
     check_call(cmd)
 
 
-def download(repo_id, filename):
+def download(repo_id, filename, branch=None):
     url = huggingface_hub.hf_hub_url(
         filename=filename,
         repo_id=repo_id,
         repo_type="dataset",
+        revision=branch,
     )
 
     headers = {}
@@ -68,7 +69,9 @@ def download_and_check(number: str, temp_dir: str):
     # The plan was to download to a fifo in order to not burden the storage drive. But
     # unfortunately the Rust Parquet library does not support reading from fifos.
 
-    non_ip_data = download("cy-data/ws-5d", f"non-ip/ws-5d-non-ip-{number}.parquet")
+    non_ip_data = download(
+        "cy-data/ws-5d", f"non-ip/ws-5d-non-ip-{number}.parquet", "upload"
+    )
     non_reflexive_data = download(
         "cy-data/ws-5d", f"non-reflexive/ws-5d-non-reflexive-{number}.parquet"
     )
