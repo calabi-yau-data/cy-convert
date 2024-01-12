@@ -2,7 +2,7 @@
 
 This program is used to convert the weight system files and polytope info files obtained for the paper [All Weight Systems for Calabi-Yau Fourfolds from Reflexive Polyhedra](https://arxiv.org/abs/1808.02422) into Parquet format.
 
-The data will be made available at https://huggingface.co/cy-data.
+The data is available at: https://huggingface.co/datasets/calabi-yau-data/ws-5d
 
 ```
 Usage: cy-convert [OPTIONS]
