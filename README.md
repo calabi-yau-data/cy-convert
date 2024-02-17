@@ -5,7 +5,7 @@ This program is used to convert the weight system files and polytope info files 
 The data is available at: https://huggingface.co/datasets/calabi-yau-data/ws-5d
 
 ```
-Usage: cy-convert [OPTIONS]
+Usage: cy-convert ipws [OPTIONS]
 
 Options:
       --ws-in <FILE>
@@ -19,5 +19,4 @@ Options:
   -i, --include-derived-quantities
       --limit <LIMIT>
   -h, --help                              Print help
-  -V, --version                           Print version
 ```

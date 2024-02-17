@@ -1,62 +1,27 @@
 use anyhow::{bail, Context, Result};
 use bytes::{Buf, BufMut};
-use clap::Parser;
 use parquet::file::metadata::KeyValue;
-use parquet::file::writer::{SerializedFileWriter, SerializedRowGroupWriter};
-use parquet::schema::types::Type as ParquetType;
+use parquet::file::writer::SerializedFileWriter;
 use regex::Regex;
 use std::cmp::{min, Ordering};
 use std::fs;
 use std::io::{Cursor, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
-const ROW_GROUP_SIZE: usize = 5_000_000;
-
-#[derive(Parser, Debug)]
-#[command(version)]
-struct Args {
-    #[arg(long, value_name = "FILE")]
-    ws_in: Option<PathBuf>,
-
-    #[arg(long, value_name = "FILE")]
-    polytope_info_in: Option<PathBuf>,
-
-    #[arg(long, value_name = "FILE")]
-    parquet_in: Vec<PathBuf>,
-
-    #[arg(long, value_name = "FILE")]
-    ws_out: Option<PathBuf>,
-
-    #[arg(long, value_name = "FILE")]
-    polytope_info_out: Option<PathBuf>,
-
-    #[arg(long, value_name = "FILE")]
-    parquet_non_ip_out: Option<PathBuf>,
-
-    #[arg(long, value_name = "FILE")]
-    parquet_non_reflexive_out: Option<PathBuf>,
-
-    #[arg(long, value_name = "FILE")]
-    parquet_reflexive_out: Option<PathBuf>,
-
-    #[arg(short, long)]
-    include_derived_quantities: bool,
-
-    #[arg(long)]
-    limit: Option<usize>,
-}
+use crate::parquet_utils::{build_parquet_int_field, write_parquet_int_column, ROW_GROUP_SIZE};
+use crate::IpwsArgs;
 
 #[derive(Default)]
 struct NonIpPolytopeInfo {
-    dimension: usize,
+    ws_dimension: usize,
     weight_lists: Vec<Vec<i32>>,
 }
 
 #[derive(Default)]
 struct NonReflexivePolytopeInfo {
-    dimension: usize,
+    ws_dimension: usize,
     weight_lists: Vec<Vec<i32>>,
     vertex_count_list: Vec<i32>,
     facet_count_list: Vec<i32>,
@@ -65,7 +30,7 @@ struct NonReflexivePolytopeInfo {
 
 #[derive(Default)]
 struct ReflexivePolytopeInfo {
-    dimension: usize,
+    ws_dimension: usize,
     weight_lists: Vec<Vec<i32>>,
     vertex_count_list: Vec<i32>,
     facet_count_list: Vec<i32>,
@@ -83,7 +48,7 @@ impl NonIpPolytopeInfo {
     }
 
     fn resize(&mut self, dimension: usize) {
-        self.dimension = dimension;
+        self.ws_dimension = dimension;
         self.weight_lists.resize(dimension, Vec::new());
     }
 }
@@ -96,7 +61,7 @@ impl NonReflexivePolytopeInfo {
     }
 
     fn resize(&mut self, dimension: usize) {
-        self.dimension = dimension;
+        self.ws_dimension = dimension;
         self.weight_lists.resize(dimension, Vec::new());
     }
 }
@@ -117,7 +82,7 @@ impl ReflexivePolytopeInfo {
                 0
             };
 
-        self.dimension = dimension;
+        self.ws_dimension = dimension;
         self.weight_lists.resize(dimension, Vec::new());
         self.hodge_number_lists
             .resize(hodge_number_lists_count, Vec::new());
@@ -452,16 +417,6 @@ fn read_polytope_info<P: AsRef<Path>>(
     Ok((non_ip, non_reflexive, reflexive))
 }
 
-fn build_parquet_int_field(name: &str) -> Result<Arc<ParquetType>> {
-    use parquet::basic::{Repetition, Type as PhysicalType};
-
-    Ok(Arc::new(
-        ParquetType::primitive_type_builder(name, PhysicalType::INT32)
-            .with_repetition(Repetition::REQUIRED)
-            .build()?,
-    ))
-}
-
 fn append_metadata<W: Write + Send>(
     writer: &mut SerializedFileWriter<W>,
     ip: bool,
@@ -473,22 +428,6 @@ fn append_metadata<W: Write + Send>(
     writer.append_key_value_metadata(KeyValue::new("reflexive".to_owned(), reflexive.to_string()));
     writer.append_key_value_metadata(KeyValue::new("dimension".to_owned(), dimension.to_string()));
     writer.append_key_value_metadata(KeyValue::new("index".to_owned(), index.to_owned()));
-}
-
-fn write_parquet_int_column<W: Write + Send>(
-    row_group_writer: &mut SerializedRowGroupWriter<W>,
-    data: &[i32],
-) -> Result<()> {
-    use parquet::data_type::Int32Type;
-
-    let mut col_writer = row_group_writer.next_column()?.expect("column");
-
-    col_writer
-        .typed::<Int32Type>()
-        .write_batch(data, None, None)?;
-    col_writer.close()?;
-
-    Ok(())
 }
 
 fn write_parquet<P: AsRef<Path>>(
@@ -817,9 +756,7 @@ fn read_parquet<P: AsRef<Path>>(
     Ok((dimension, numerator, denominator))
 }
 
-fn main() -> Result<()> {
-    let args = Args::parse();
-
+pub fn run(args: IpwsArgs) -> Result<()> {
     let limit = args.limit.unwrap_or(usize::MAX);
 
     if let (Some(ws_in), Some(polytope_info_in)) = (args.ws_in, args.polytope_info_in) {
