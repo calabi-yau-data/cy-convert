@@ -1,5 +1,5 @@
 use anyhow::Result;
-use parquet::basic::{Repetition, Type as PhysicalType};
+use parquet::basic::{LogicalType, Repetition, Type as PhysicalType};
 use parquet::file::writer::SerializedRowGroupWriter;
 use parquet::schema::types::Type as SchemaType;
 use std::io::Write;
@@ -13,6 +13,26 @@ pub fn build_parquet_int_field(name: &str) -> Result<Arc<SchemaType>> {
             .with_repetition(Repetition::REQUIRED)
             .build()?,
     ))
+}
+
+// https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#lists
+pub fn build_parquet_int_list_field(name: &str) -> Result<Arc<SchemaType>> {
+    let element = SchemaType::primitive_type_builder("element", PhysicalType::INT32)
+        .with_repetition(Repetition::REQUIRED)
+        .build()?;
+
+    let list = SchemaType::group_type_builder("list")
+        .with_repetition(Repetition::REPEATED)
+        .with_fields([Arc::new(element)].to_vec())
+        .build()?;
+
+    let outer = SchemaType::group_type_builder(name)
+        .with_logical_type(Some(LogicalType::List))
+        .with_repetition(Repetition::REQUIRED)
+        .with_fields([Arc::new(list)].to_vec())
+        .build()?;
+
+    Ok(Arc::new(outer))
 }
 
 pub fn write_parquet_int_column<W: Write + Send>(
@@ -29,4 +49,24 @@ pub fn write_parquet_int_column<W: Write + Send>(
     col_writer.close()?;
 
     Ok(())
+}
+
+pub fn write_repeated_parquet_int_column<W: Write + Send>(
+    row_group_writer: &mut SerializedRowGroupWriter<W>,
+    data: &[i32],
+    definition_levels: &[i16],
+    repetition_levels: &[i16],
+) -> Result<usize> {
+    use parquet::data_type::Int32Type;
+
+    let mut col_writer = row_group_writer.next_column()?.expect("column");
+
+    let count = col_writer.typed::<Int32Type>().write_batch(
+        data,
+        Some(definition_levels),
+        Some(repetition_levels),
+    )?;
+    col_writer.close()?;
+
+    Ok(count)
 }

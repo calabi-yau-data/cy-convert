@@ -231,6 +231,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "clap",
+ "once_cell",
  "parquet",
  "regex",
 ]

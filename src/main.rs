@@ -4,6 +4,7 @@ use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 
 mod ipws;
+mod palp;
 mod parquet_utils;
 
 #[derive(Parser)]
@@ -16,6 +17,16 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Ipws(IpwsArgs),
+    Palp(PalpArgs),
+}
+
+#[derive(Args)]
+struct PalpArgs {
+    #[arg(long, value_name = "FILE")]
+    palp_in: PathBuf,
+
+    #[arg(long, value_name = "FILE")]
+    parquet_out: PathBuf,
 }
 
 #[derive(Args)]
@@ -56,5 +67,6 @@ fn main() -> Result<()> {
 
     match args.command {
         Commands::Ipws(args) => ipws::run(args),
+        Commands::Palp(args) => palp::run(args),
     }
 }

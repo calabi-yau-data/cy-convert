@@ -20,3 +20,22 @@ Options:
       --limit <LIMIT>
   -h, --help                              Print help
 ```
+
+It is also used to convert the polyhedron data on reflexive polyhedra in four dimensions [Complete classification of reflexive ]polyhedra in four dimensions(https://arxiv.org/abs/hep-th/0002240).
+
+```
+Usage: cy-convert palp --palp-in <FILE> --parquet-out <FILE>
+
+Options:
+      --palp-in <FILE>
+      --parquet-out <FILE>
+  -h, --help                Print help
+```
+
+# Parquet tools
+
+Parquet files can be inspected using the tools from the [parquet crate](https://crates.io/crates/parquet).
+
+```
+cargo install parquet --features=cli
+```
