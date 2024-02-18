@@ -16,23 +16,34 @@ pub fn build_parquet_int_field(name: &str) -> Result<Arc<SchemaType>> {
 }
 
 // https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#lists
-pub fn build_parquet_int_list_field(name: &str) -> Result<Arc<SchemaType>> {
-    let element = SchemaType::primitive_type_builder("element", PhysicalType::INT32)
+pub fn build_parquet_int_list_of_lists_field(name: &str) -> Result<Arc<SchemaType>> {
+    let inner_element = SchemaType::primitive_type_builder("element", PhysicalType::INT32)
         .with_repetition(Repetition::REQUIRED)
         .build()?;
 
-    let list = SchemaType::group_type_builder("list")
+    let inner_list = SchemaType::group_type_builder("list")
         .with_repetition(Repetition::REPEATED)
-        .with_fields([Arc::new(element)].to_vec())
+        .with_fields([Arc::new(inner_element)].to_vec())
         .build()?;
 
-    let outer = SchemaType::group_type_builder(name)
+    let outer_element = SchemaType::group_type_builder("element")
         .with_logical_type(Some(LogicalType::List))
         .with_repetition(Repetition::REQUIRED)
-        .with_fields([Arc::new(list)].to_vec())
+        .with_fields([Arc::new(inner_list)].to_vec())
         .build()?;
 
-    Ok(Arc::new(outer))
+    let outer_list = SchemaType::group_type_builder("list")
+        .with_repetition(Repetition::REPEATED)
+        .with_fields([Arc::new(outer_element)].to_vec())
+        .build()?;
+
+    let field = SchemaType::group_type_builder(name)
+        .with_logical_type(Some(LogicalType::List))
+        .with_repetition(Repetition::REQUIRED)
+        .with_fields([Arc::new(outer_list)].to_vec())
+        .build()?;
+
+    Ok(Arc::new(field))
 }
 
 pub fn write_parquet_int_column<W: Write + Send>(

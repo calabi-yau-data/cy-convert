@@ -7,7 +7,7 @@ use anyhow::{bail, Context as _, Result};
 use regex::Regex;
 
 use crate::parquet_utils::{
-    build_parquet_int_field, build_parquet_int_list_field, write_parquet_int_column,
+    build_parquet_int_field, build_parquet_int_list_of_lists_field, write_parquet_int_column,
     write_repeated_parquet_int_column, ROW_GROUP_SIZE,
 };
 use crate::PalpArgs;
@@ -15,7 +15,7 @@ use crate::PalpArgs;
 #[derive(Default)]
 struct PolytopeInfo {
     dimension: usize,
-    coordinate_lists: Vec<Vec<i32>>,
+    coordinate_list: Vec<i32>,
     vertex_count_list: Vec<i32>,
     facet_count_list: Vec<i32>,
     point_count_list: Vec<i32>,
@@ -27,7 +27,6 @@ struct PolytopeInfo {
 impl PolytopeInfo {
     fn resize(&mut self, dimension: usize) {
         self.dimension = dimension;
-        self.coordinate_lists.resize(dimension, Vec::new());
         self.hodge_number_lists.resize(dimension - 2, Vec::new());
     }
 }
@@ -138,11 +137,13 @@ fn parse(input: &str) -> Result<PolytopeInfo> {
         }
 
         if header.rows < header.columns {
-            for (i, mut coords) in coordinates.into_iter().enumerate() {
-                ret.coordinate_lists[i].append(&mut coords);
+            for i in 0..vertex_count {
+                for j in 0..dimension {
+                    ret.coordinate_list.push(coordinates[j][i]);
+                }
             }
         } else {
-            bail!("vertices can only be read when specified column-wise");
+            unimplemented!("vertices can only be read when specified column-wise");
         };
 
         if header.vertex_count as usize != vertex_count {
@@ -169,10 +170,7 @@ fn write_parquet<P: AsRef<Path>>(info: PolytopeInfo, path: P) -> Result<()> {
             .build(),
     );
 
-    let mut coordinate_fields = Vec::new();
-    for i in 0..info.dimension {
-        coordinate_fields.push(build_parquet_int_list_field(&format!("coordinate{}", i))?);
-    }
+    let vertices_field = build_parquet_int_list_of_lists_field("vertices")?;
 
     let mut hodge_number_fields = Vec::new();
     for i in 0..info.dimension - 2 {
@@ -185,11 +183,13 @@ fn write_parquet<P: AsRef<Path>>(info: PolytopeInfo, path: P) -> Result<()> {
     let dual_point_count_field = build_parquet_int_field("dual_point_count")?;
     let euler_characteristic_field = build_parquet_int_field("euler_characteristic")?;
 
-    let mut fields = coordinate_fields.clone();
-    fields.push(vertex_count_field.clone());
-    fields.push(facet_count_field.clone());
-    fields.push(point_count_field.clone());
-    fields.push(dual_point_count_field.clone());
+    let mut fields = vec![
+        vertices_field,
+        vertex_count_field,
+        facet_count_field,
+        point_count_field,
+        dual_point_count_field,
+    ];
     fields.append(&mut hodge_number_fields.clone());
     fields.push(euler_characteristic_field.clone());
 
@@ -215,23 +215,29 @@ fn write_parquet<P: AsRef<Path>>(info: PolytopeInfo, path: P) -> Result<()> {
         let coordinate_start = coordinate_end;
         let mut coordinate_repetition_levels = Vec::new();
         for &count in &info.vertex_count_list[start..end] {
-            coordinate_repetition_levels.push(0);
-            coordinate_end += count as usize;
-            for _ in 1..count {
-                coordinate_repetition_levels.push(1);
+            coordinate_end += count as usize * info.dimension;
+            for v in 0..count {
+                for i in 0..info.dimension {
+                    let value = if v == 0 && i == 0 {
+                        0
+                    } else if i == 0 {
+                        1
+                    } else {
+                        2
+                    };
+                    coordinate_repetition_levels.push(value);
+                }
             }
         }
-        let coordinate_definition_levels = vec![1; coordinate_end - coordinate_start];
+        let coordinate_definition_levels = vec![2; coordinate_end - coordinate_start];
 
-        for coordinates in &info.coordinate_lists {
-            let count = write_repeated_parquet_int_column(
-                &mut row_group_writer,
-                &coordinates[coordinate_start..coordinate_end],
-                &coordinate_definition_levels,
-                &coordinate_repetition_levels,
-            )?;
-            assert_eq!(count, coordinate_end - coordinate_start);
-        }
+        let count = write_repeated_parquet_int_column(
+            &mut row_group_writer,
+            &info.coordinate_list[coordinate_start..coordinate_end],
+            &coordinate_definition_levels,
+            &coordinate_repetition_levels,
+        )?;
+        assert_eq!(count, coordinate_end - coordinate_start);
 
         write_parquet_int_column(&mut row_group_writer, &info.vertex_count_list[start..end])?;
         write_parquet_int_column(&mut row_group_writer, &info.facet_count_list[start..end])?;
