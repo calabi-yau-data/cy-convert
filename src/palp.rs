@@ -143,7 +143,11 @@ fn parse(input: &str) -> Result<PolytopeInfo> {
                 }
             }
         } else {
-            unimplemented!("vertices can only be read when specified column-wise");
+            for i in 0..vertex_count {
+                for j in 0..dimension {
+                    ret.coordinate_list.push(coordinates[i][j]);
+                }
+            }
         };
 
         if header.vertex_count as usize != vertex_count {
