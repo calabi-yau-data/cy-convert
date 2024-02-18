@@ -1,17 +1,12 @@
-[tool.poetry]
+[project]
 name = "hugging-face-upload"
 version = "0.1.0"
 description = ""
-authors = ["Friedrich Schöller <code@schoeller.se>"]
 readme = "README.md"
-packages = [{include = "convert-and-upload"}]
+requires-python = ">=3.11"
 
-[tool.poetry.dependencies]
-python = "^3.10"
-huggingface-hub = {extras = ["cli"], version = "^0.20.1"}
-requests = "^2.31.0"
-datasets = "^2.16.0"
+dependencies = ["huggingface-hub", "requests", "datasets"]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
