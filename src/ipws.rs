@@ -10,7 +10,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::parquet_utils::{build_parquet_int_field, write_parquet_int_column, ROW_GROUP_SIZE};
+use crate::parquet_utils::{build_parquet_int_field, write_parquet_int_column};
 use crate::IpwsArgs;
 
 #[derive(Default)]
@@ -444,6 +444,8 @@ fn write_parquet<P: AsRef<Path>>(
     use parquet::basic::{Compression, ZstdLevel};
     use parquet::file::properties::{WriterProperties, WriterVersion};
     use parquet::schema::types::Type;
+
+    pub const ROW_GROUP_SIZE: usize = 5_000_000;
 
     let writer_props = Arc::new(
         WriterProperties::builder()

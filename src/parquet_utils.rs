@@ -5,8 +5,6 @@ use parquet::schema::types::Type as SchemaType;
 use std::io::Write;
 use std::sync::Arc;
 
-pub const ROW_GROUP_SIZE: usize = 5_000_000;
-
 pub fn build_parquet_int_field(name: &str) -> Result<Arc<SchemaType>> {
     Ok(Arc::new(
         SchemaType::primitive_type_builder(name, PhysicalType::INT32)

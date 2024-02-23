@@ -8,7 +8,7 @@ use regex::Regex;
 
 use crate::parquet_utils::{
     build_parquet_int_field, build_parquet_int_list_of_lists_field, write_parquet_int_column,
-    write_repeated_parquet_int_column, ROW_GROUP_SIZE,
+    write_repeated_parquet_int_column,
 };
 use crate::PalpArgs;
 
@@ -166,6 +166,8 @@ fn write_parquet<P: AsRef<Path>>(info: PolytopeInfo, path: P) -> Result<()> {
     use parquet::file::properties::{WriterProperties, WriterVersion};
     use parquet::file::writer::SerializedFileWriter;
     use parquet::schema::types::Type as SchemaType;
+
+    pub const ROW_GROUP_SIZE: usize = 1_000_000;
 
     let writer_props = Arc::new(
         WriterProperties::builder()
