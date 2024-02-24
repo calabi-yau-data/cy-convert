@@ -21,7 +21,9 @@ Options:
   -h, --help                              Print help
 ```
 
-It is also used to convert the polyhedron data on reflexive polyhedra in four dimensions [Complete classification of reflexive ]polyhedra in four dimensions(https://arxiv.org/abs/hep-th/0002240).
+It is also used to convert the polyhedron data on reflexive polyhedra in four dimensions [Complete classification of reflexive polyhedra in four dimensions](https://arxiv.org/abs/hep-th/0002240).
+
+The data is available at: https://huggingface.co/datasets/calabi-yau-data/polytopes-4d
 
 ```
 Usage: cy-convert palp [OPTIONS]
@@ -34,10 +36,19 @@ Options:
   -h, --help                Print help
 ```
 
-# Parquet tools
+## Parquet tools
 
 Parquet files can be inspected using the tools from the [parquet crate](https://crates.io/crates/parquet).
 
 ```
 cargo install parquet --features=cli
 ```
+
+## Lessons
+
+- The Rust parquet library is very low level and requires quite detailed knowledge of the
+  Parquet format. It might be easier to use Arrow on top of Parquet to read and write
+  data.
+- The Hugging Face dataset viewer does not support large row groups. While five million
+  records per row group was okay for the 4d weight system dataset, this is too much for
+  the 4d polytope dataset, presumably because each record contains more data.
