@@ -23,10 +23,16 @@ enum Commands {
 #[derive(Args)]
 struct PalpArgs {
     #[arg(long, value_name = "FILE")]
-    palp_in: PathBuf,
+    palp_in: Option<PathBuf>,
 
     #[arg(long, value_name = "FILE")]
-    parquet_out: PathBuf,
+    palp_out: Option<PathBuf>,
+
+    #[arg(long, value_name = "FILE")]
+    parquet_in: Option<PathBuf>,
+
+    #[arg(long, value_name = "FILE")]
+    parquet_out: Option<PathBuf>,
 }
 
 #[derive(Args)]

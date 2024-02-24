@@ -24,10 +24,12 @@ Options:
 It is also used to convert the polyhedron data on reflexive polyhedra in four dimensions [Complete classification of reflexive ]polyhedra in four dimensions(https://arxiv.org/abs/hep-th/0002240).
 
 ```
-Usage: cy-convert palp --palp-in <FILE> --parquet-out <FILE>
+Usage: cy-convert palp [OPTIONS]
 
 Options:
       --palp-in <FILE>
+      --palp-out <FILE>
+      --parquet-in <FILE>
       --parquet-out <FILE>
   -h, --help                Print help
 ```

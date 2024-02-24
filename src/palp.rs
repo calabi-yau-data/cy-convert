@@ -1,7 +1,7 @@
 use std::cmp::{max, min};
-use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+use std::{fs, iter};
 
 use anyhow::{bail, Context as _, Result};
 use regex::Regex;
@@ -101,7 +101,7 @@ fn parse_coordinates(header: &PalpHeader, lines: &mut std::str::Lines) -> Result
     Ok(ret)
 }
 
-fn parse(input: &str) -> Result<PolytopeInfo> {
+fn parse_palp(input: &str) -> Result<PolytopeInfo> {
     let mut ret = PolytopeInfo::default();
 
     let mut lines = input.lines();
@@ -161,7 +161,56 @@ fn parse(input: &str) -> Result<PolytopeInfo> {
     Ok(ret)
 }
 
-fn write_parquet<P: AsRef<Path>>(info: PolytopeInfo, path: P) -> Result<()> {
+fn format_palp(info: &PolytopeInfo) -> Result<String> {
+    let mut ret = String::new();
+    let mut coord_index = 0;
+
+    for i in 0..info.vertex_count_list.len() {
+        let hs: Vec<String> = info
+            .hodge_number_lists
+            .iter()
+            .map(|x| x[i].to_string())
+            .collect();
+
+        ret += &format!(
+            "{} {}  M:{} {} N:{} {} H:{} [{}]\n",
+            info.dimension,
+            info.vertex_count_list[i],
+            info.point_count_list[i],
+            info.vertex_count_list[i],
+            info.dual_point_count_list[i],
+            info.facet_count_list[i],
+            hs.join(","),
+            info.euler_characteristic_list[i]
+        );
+
+        let vertex_count = info.vertex_count_list[i];
+        let coordinates: Vec<_> = info.coordinate_list[coord_index..]
+            .iter()
+            .take(vertex_count as usize * info.dimension as usize)
+            .map(|x| format!("{:5}", x))
+            .collect();
+        coord_index += coordinates.len();
+
+        // for i in 0..vertex_count as usize {
+        //     for j in 0..info.dimension {
+        //         ret += &coordinates[i * info.dimension + j];
+        //     }
+        //     ret += "\n";
+        // }
+
+        for i in 0..info.dimension {
+            for j in 0..vertex_count as usize {
+                ret += &coordinates[j * info.dimension + i];
+            }
+            ret += "\n";
+        }
+    }
+
+    Ok(ret)
+}
+
+fn write_parquet<P: AsRef<Path>>(path: P, info: PolytopeInfo) -> Result<()> {
     use parquet::basic::{Compression, ZstdLevel};
     use parquet::file::properties::{WriterProperties, WriterVersion};
     use parquet::file::writer::SerializedFileWriter;
@@ -270,11 +319,86 @@ fn write_parquet<P: AsRef<Path>>(info: PolytopeInfo, path: P) -> Result<()> {
     Ok(())
 }
 
-pub fn run(args: PalpArgs) -> Result<()> {
-    let input = std::fs::read_to_string(args.palp_in)?;
-    let polytope_info = parse(&input)?;
+fn read_parquet<P: AsRef<Path>>(path: P, info: &mut PolytopeInfo) -> Result<()> {
+    use parquet::column::reader::ColumnReader;
+    use parquet::file::reader::FileReader as _;
+    use parquet::file::serialized_reader::SerializedFileReader;
 
-    write_parquet(polytope_info, args.parquet_out)?;
+    let file = fs::File::open(&path)?;
+    let reader = SerializedFileReader::new(file)?;
+
+    let metadata = reader.metadata();
+
+    let num_columns = metadata.row_group(0).num_columns();
+    info.dimension = num_columns - 4;
+
+    info.resize(info.dimension);
+
+    let mut values = vec![Vec::new(); num_columns];
+    let mut definition_levels = vec![Vec::new(); num_columns];
+    let mut repetition_levels = vec![Vec::new(); num_columns];
+    let mut pos = vec![0; num_columns];
+
+    for g in 0..metadata.num_row_groups() {
+        let row_group_reader = reader.get_row_group(g)?;
+        let row_group_metadata = metadata.row_group(g);
+
+        if num_columns > row_group_metadata.num_columns() {
+            bail!("columns missing");
+        }
+
+        for c in 0..num_columns {
+            let c_pos = pos[c];
+            let to_read = row_group_metadata.column(c).num_values() as usize;
+
+            definition_levels[c].extend(iter::repeat(0).take(to_read));
+            repetition_levels[c].extend(iter::repeat(0).take(to_read));
+            values[c].extend(iter::repeat(0).take(to_read));
+
+            let mut column_reader = row_group_reader.get_column_reader(c)?;
+
+            match column_reader {
+                ColumnReader::Int32ColumnReader(ref mut typed_reader) => {
+                    let (_, count, _) = typed_reader.read_records(
+                        to_read,
+                        Some(&mut definition_levels[c][c_pos..c_pos + to_read]),
+                        Some(&mut repetition_levels[c][c_pos..c_pos + to_read]),
+                        &mut values[c][c_pos..c_pos + to_read],
+                    )?;
+
+                    assert_eq!(count, to_read);
+                }
+                _ => bail!("invalid Parquet column type"),
+            }
+
+            pos[c] += to_read;
+        }
+    }
+
+    info.coordinate_list = values.remove(0);
+    info.vertex_count_list = values.remove(0);
+    info.facet_count_list = values.remove(0);
+    info.point_count_list = values.remove(0);
+    info.dual_point_count_list = values.remove(0);
+    info.hodge_number_lists = values.drain(0..info.dimension - 2).collect();
+    info.euler_characteristic_list = values.remove(0);
+
+    Ok(())
+}
+
+pub fn run(args: PalpArgs) -> Result<()> {
+    if let (Some(palp_in), Some(parquet_out)) = (args.palp_in, args.parquet_out) {
+        let input = std::fs::read_to_string(palp_in)?;
+        let polytope_info = parse_palp(&input)?;
+        write_parquet(parquet_out, polytope_info)?;
+    } else if let (Some(palp_out), Some(parquet_in)) = (args.palp_out, args.parquet_in) {
+        let mut polytope_info = PolytopeInfo::default();
+        read_parquet(parquet_in, &mut polytope_info)?;
+        let output = format_palp(&polytope_info)?;
+        std::fs::write(palp_out, output)?;
+    } else {
+        println!("Nothing to do.");
+    }
 
     Ok(())
 }
